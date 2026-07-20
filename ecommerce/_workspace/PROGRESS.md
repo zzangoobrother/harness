@@ -13,8 +13,8 @@
 
 ```
 Stage 0: 계약(contract) 전체 설계          ✅ 완료
-Stage 1: 인증 (회원가입/로그인 + JWT) + 프로젝트 스캐폴딩   ⬜ 다음
-Stage 2: 상품 (목록/상세)                  ⬜
+Stage 1: 인증 (회원가입/로그인 + JWT) + 프로젝트 스캐폴딩   ✅ 완료 (QA PASS)
+Stage 2: 상품 (목록/상세)                  ⬜ 다음
 Stage 3: 장바구니 (서버 저장)              ⬜
 Stage 4: 주문/체크아웃 + 모의결제          ⬜
 ```
@@ -71,16 +71,26 @@ Stage 4: 주문/체크아웃 + 모의결제          ⬜
 
 ---
 
-## 내일 재개 방법
+## Stage 1 산출물 요약 (완료, QA PASS)
 
-1. 이 문서와 `_workspace/contract/` 3파일을 읽어 컨텍스트 복원.
-2. 사용자에게 **"Stage 1(인증)부터 갈까요?"** 확인.
-3. Stage 1 착수 시:
-   - `backend-engineer` 역할 주입 서브에이전트 → `ecommerce/backend/` 스캐폴딩 + 인증(signup/login, JWT) 구현.
-   - `frontend-engineer` 역할 주입 서브에이전트 → `ecommerce/frontend/` 스캐폴딩 + 회원가입/로그인 화면 + API 클라이언트 구현.
-   - 두 엔지니어는 `_workspace/contract/`를 먼저 읽고 그 shape과 정확히 일치시킨다.
-4. 인증 모듈 완료 즉시 `qa-integrator` 역할 서브에이전트로 경계면 검증(BE 응답 ↔ FE 타입, 실제 빌드/타입체크). 결과는 `_workspace/qa-report.md`에 기록.
-5. 통과하면 멈추고 다음 단계 지시 대기.
+- **backend/** — Spring Boot **4.0.x + Jackson 3 + JDK 25 + Gradle wrapper**. Security/JWT 필터, `GlobalExceptionHandler`(공통 에러 스키마), `User` 엔티티, `POST /api/auth/signup`(201)·`/login`(200). `./gradlew test` 6/6 통과. dev=PostgreSQL, test=H2.
+- **frontend/** — Vite+React19+TS. `api/client.ts`(Bearer 자동첨부/401 리다이렉트/에러 정규화), `types/contract.ts`(계약 복사본, 전 도메인 타입 포함), `AuthContext`+`RequireAuth`, 회원가입/로그인 페이지. `tsc`·`vite build` 통과.
+- **경계면 검증:** `_workspace/qa-report.md`에 "인증 모듈 검증 (1차)" — 전 항목 일치, 불일치 0건, PASS.
+
+**재사용 인프라 위치 (다음 도메인이 그대로 씀):**
+- BE: `common/exception/ErrorCode`에 상품/장바구니/주문/결제 코드 **이미 전부 등록**. 컨트롤러에서 `@AuthenticationPrincipal AuthPrincipal principal`로 userId 취득. `GET /api/products/**`는 permitAll 세팅됨.
+- FE: `src/api/client.ts` import해서 `products.ts`/`cart.ts`/`orders.ts` 추가. `router.tsx`에 다음 도메인 라우트 TODO 자리표시. 보호 화면은 `<RequireAuth>`로 감싼다.
+- **환경 주의:** Spring Boot 4 + Jackson 3 (ObjectMapper=`tools.jackson.databind.ObjectMapper`, MockMvc 슬라이스=`org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc`, `write-dates-as-timestamps` 속성 제거됨).
+
+## 다음 단계(Stage 2: 상품) 재개 방법
+
+1. 이 문서 + `_workspace/contract/` + `qa-report.md`를 읽어 컨텍스트 복원.
+2. Stage 2 착수 시:
+   - `backend-engineer` → 상품 도메인(`Product` 엔티티, `GET /api/products`=PageResponse, `GET /api/products/{id}`). 시드 데이터 고려.
+   - `frontend-engineer` → 상품 목록/상세 화면, `api/products.ts`. 목록은 `PageResponse<Product>` 형태 주의.
+   - 두 엔지니어는 계약을 먼저 읽고 shape을 정확히 일치시킨다. 계약 모순 발견 시 계약을 직접 고치지 말고 보고 → 오케스트레이터가 조율.
+3. 완료 즉시 `qa-integrator`로 상품 모듈 경계면 검증. 결과는 `qa-report.md`에 누적.
+4. 통과하면 멈추고 다음 단계 지시 대기.
 
 ---
 

@@ -1,0 +1,21 @@
+# 테스트 프로파일: DB 없이 컴파일/테스트가 가능하도록 H2 in-memory 사용
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+    open-in-view: false
+  jackson:
+    default-property-inclusion: always
+
+app:
+  jwt:
+    secret: test-secret-key-for-junit-only-0123456789-abcdefghijklmnop
+    expiration-ms: 3600000 # 1시간
