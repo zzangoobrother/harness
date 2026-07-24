@@ -20,6 +20,9 @@ export function Layout() {
           이커머스
         </Link>
         <nav className="app-nav">
+          <Link to="/products" className="btn btn-ghost">
+            상품
+          </Link>
           {isAuthenticated ? (
             <>
               <span className="nav-user">{user?.name}님</span>

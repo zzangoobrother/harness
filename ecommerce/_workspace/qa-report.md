@@ -68,4 +68,107 @@
 
 ---
 
-_다음 모듈(상품 → 장바구니 → 주문/결제)은 구현 완료 후 본 리포트에 새 섹션으로 이어 검증한다._
+## 상품 모듈 검증 (2차) — Phase C / Stage 2
+
+- **검증 일시**: 2026-07-24
+- **대상 모듈**: 상품(목록/상세). 장바구니/주문/결제는 미구현으로 검증 대상 아님
+- **검증자**: 오케스트레이터(메인 스레드)가 `integration-qa` 스킬로 직접 수행
+- **대상 코드**:
+  - 백엔드: `ecommerce/backend/` — `product/` 패키지 신규 + `common/dto/PageResponse`, `common/exception` 확장
+  - 프론트: `ecommerce/frontend/` — `api/products.ts`, `pages/ProductListPage.tsx`, `pages/ProductDetailPage.tsx`, `router.tsx`
+
+### 1. 경계면 대조 결과 표
+
+| 항목 | 백엔드(BE) | 프론트(FE) | 계약 | 일치 |
+|------|-----------|-----------|------|------|
+| 목록 경로/메서드 | `GET /api/products` (`ProductController.java:@RequestMapping("/api/products")` + `@GetMapping`) | `client.get("/api/products", {params})` (`api/products.ts:22-25`) | `GET /api/products` (200) | 일치 |
+| 상세 경로/메서드 | `GET /api/products/{id}` (`ProductController.java` `@GetMapping("/{id}")`) | `client.get(\`/api/products/${id}\`)` (`api/products.ts:29-31`) | `GET /api/products/{id}` (200) | 일치 |
+| 쿼리 파라미터 | `page`(기본 0), `size`(기본 20), `category`(선택) — `@RequestParam` | `ListProductsParams{page?,size?,category?}`, axios가 undefined 키 생략 (`api/products.ts:7-14`) | `page`/`size`/`category` | 일치 |
+| 목록 응답 래핑 | 자체 `PageResponse` record로 변환(`PageResponse.from(Page)`), Spring `Page` 직렬화 미사용 | `PageResponse<Product>` 소비, `data.items`/`data.page`/`data.totalPages` 사용 (`ProductListPage.tsx:119-159`) | `{items,page,size,totalElements,totalPages}` | 일치 |
+| PageResponse 필드명 | `items, page, size, totalElements, totalPages` (`common/dto/PageResponse.java:20-26`) | 동일 (`types/contract.ts:73-83`) | 동일 | 일치 |
+| Product 필드/순서 | `id,name,description,price,imageUrl,stock,category,createdAt` (`product/dto/ProductResponse.java:11-20`) | 동일 (`types/contract.ts:99-110`) | 동일 | 일치 |
+| 금액 타입 | `Integer price` (정수 원) | `price: number`, `toLocaleString("ko-KR")+"원"` 포맷 (`ProductListPage.tsx:21`) | 정수 원(KRW) | 일치 |
+| nullable 처리 | `description/imageUrl/category` null 허용, `default-property-inclusion: always`로 **키 생략 없이 null 명시** | `string \| null` (옵셔널 아님) | nullable 명시 | 일치 (실응답 확인) |
+| 날짜 직렬화 | `Instant` → ISO 8601 문자열. 실응답: `"2026-07-24T14:23:54.609722Z"` | `createdAt: string` | ISO 8601 문자열 | 일치 (실응답 확인) |
+| 상세 404 | `ProductNotFoundException` → `ErrorCode.NOT_FOUND` → 404 + 표준 에러 스키마 | `err instanceof ApiError && err.code === "NOT_FOUND"` 분기 (`ProductDetailPage.tsx:36`) | 404 `NOT_FOUND` | 일치 |
+| page/size 유효성 | `page<0` 또는 `size<=0` → `InvalidPageRequestException` → 400 `VALIDATION_ERROR` | 페이지네이션 버튼이 `0 <= page <= totalPages-1`로 제한 | 400 `VALIDATION_ERROR` | 일치 |
+| size 상한 | 상한 없음(`PageRequest.of(page,size)` 그대로) | 카테고리 스캔에 `size=100` 사용 (`ProductListPage.tsx:18,37`) | 계약에 상한 규정 없음 | 일치 (100 요청 정상 처리 확인) |
+| 인증 요구 | `GET /api/products/**` permitAll (`SecurityConfig.java:53`) | 라우트를 `RequireAuth`로 감싸지 않음 (`router.tsx:36-37`) | 인증 불필요 | 일치 |
+| 인증 헤더 | 토큰이 와도 permitAll로 무시 | 인터셉터가 토큰 있으면 자동 첨부(무해) | - | 일치 |
+| 잘못된 타입 파라미터 | (수정 후) `MethodArgumentTypeMismatchException` → 400 `VALIDATION_ERROR` + details | `ApiError`로 정규화되어 메시지 노출 | 400 `VALIDATION_ERROR` | 일치 (수정 후) |
+| CORS 오리진 | `http://localhost:5173`, `:3000` 허용 (Stage 1과 동일) | Vite dev 5173, baseURL 8080 | Vite dev 허용 | 일치 |
+
+경계면 대조: 최초 검증에서 **불일치 2건** 발견 → 수정 후 **전 항목 일치**.
+
+### 2. 실제 빌드/테스트 실행 결과
+
+| 대상 | 명령 | 결과 |
+|------|------|------|
+| 백엔드 테스트 | `cd backend && ./gradlew cleanTest test` | **BUILD SUCCESSFUL**. `AuthControllerTest` 6/6, `ProductControllerTest` 10/10 — 합계 **16/16**, failures=0, errors=0 |
+| 프론트 타입체크+빌드 | `cd frontend && npm run build` (`tsc -b && vite build`) | **성공**. tsc 오류 0, 88 modules transformed, `dist/` 생성 |
+| 실응답 확인 | MockMvc 진단 테스트로 실제 JSON 본문 출력 후 삭제 | 목록/에러 응답 shape 육안 대조 완료 (아래 인용) |
+
+**검증 방법 주의:** `./gradlew test`만 실행하면 Gradle이 `UP-TO-DATE`로 **테스트를 건너뛴다**. 실제 실행을
+보장하려면 반드시 `cleanTest`를 함께 지정한다(본 검증에서 실제로 첫 실행이 캐시 히트였음).
+
+**실서버 curl 검증은 생략**: dev 프로필의 PostgreSQL(5432) 미기동이며 H2는 `testRuntimeOnly`라
+`bootRun` 불가. 대신 MockMvc로 실제 직렬화 결과를 확보하여 동등 수준으로 검증함. 확보한 실응답:
+
+```json
+{"items":[{"id":1,"name":"무선 이어폰","description":null,"price":129000,"imageUrl":null,
+"stock":50,"category":null,"createdAt":"2026-07-24T14:23:54.609722Z"}],
+"page":0,"size":20,"totalElements":1,"totalPages":1}
+```
+
+### 3. 발견된 불일치 목록
+
+#### [상품] 불일치 #1 — 쿼리 파라미터 타입 불일치 시 500 (해결)
+
+- **항목**: 에러 상태코드/포맷
+- **백엔드**: `common/exception/GlobalExceptionHandler.java` — `MethodArgumentTypeMismatchException` 핸들러 부재로
+  fallback `@ExceptionHandler(Exception.class)`에 포착 → `GET /api/products?page=abc` 실응답
+  `500 {"code":"INTERNAL_ERROR",...}`
+- **프론트**: `api/client.ts` — `ApiError`로 정규화되나 code가 `INTERNAL_ERROR`라 사용자에게 "서버 내부 오류"로 표시
+- **기대(계약)**: `api-spec.md` 2.1 — 잘못된 page/size는 `400 VALIDATION_ERROR`
+- **영향**: 클라이언트 입력 오류가 서버 결함(5xx)으로 보고되어 모니터링 오염. **상품 전용이 아닌 공통 인프라 결함**으로
+  Stage 3(`/api/cart/items/{id}`)·Stage 4(`/api/orders/{id}`)에 그대로 전파될 사안
+- **담당**: backend-engineer
+- **상태**: **해결** — `GlobalExceptionHandler`에 `MethodArgumentTypeMismatchException` +
+  `MissingServletRequestParameterException` 핸들러 추가(400 `VALIDATION_ERROR` + `details`에 파라미터명).
+  회귀 테스트 `list_nonNumericPage_returns400_notInternalError` 추가, 재실행 통과 확인
+
+#### [상품] 불일치 #2 — PathVariable 타입 불일치 시 500 (해결)
+
+- **항목**: 에러 상태코드/포맷
+- **백엔드**: 동일 원인. `GET /api/products/abc` 실응답 `500 {"code":"INTERNAL_ERROR",...}`
+- **프론트**: `ProductDetailPage.tsx:36`은 `code === "NOT_FOUND"`만 분기하므로 안내 문구가 "상품을 찾을 수 없습니다"가
+  아닌 서버 오류 메시지로 노출
+- **기대(계약)**: 클라이언트 입력 오류이므로 4xx (`VALIDATION_ERROR`)
+- **영향**: 위와 동일. 경로 파라미터를 쓰는 모든 후속 도메인에 전파
+- **담당**: backend-engineer
+- **상태**: **해결** — 위 핸들러로 함께 처리. 회귀 테스트 `detail_nonNumericId_returns400_notInternalError` 추가, 통과 확인
+
+#### 참고(불일치 아님, 관찰 사항)
+
+- **계약 빈틈 — `category=""`(빈 문자열) 처리 미규정**: BE는 `isBlank()`를 "필터 없음"으로 처리하고,
+  FE는 `category || undefined`로 빈 문자열을 애초에 보내지 않는다. 현재는 양쪽이 우연히 같은 규칙이라
+  문제없으나 계약에 명시가 없다. 추후 api-architect가 명문화 권장(현 시점 결함 아님).
+- **FE 카테고리 목록 수집 방식의 한계**: 카테고리 전용 API가 계약에 없어 `size=100` 단발 조회로 카테고리를
+  수집한다(`ProductListPage.tsx:18`). 상품이 100개를 넘으면 일부 카테고리가 누락된다. FE 코드 주석에
+  한계가 명시되어 있으며, 확장 시 전용 카테고리 API 신설이 필요하다.
+- **시드 데이터**: `product/config/ProductSeeder.java` — `@Profile("!test")`로 test(H2)에서 비활성.
+  dev에서 상품 12개(electronics/fashion/home 각 4개) 삽입, `count() > 0`이면 중복 삽입 안 함.
+  테스트 프로필 격리가 올바르게 되어 있어 시드가 테스트를 오염시키지 않음을 확인.
+- **Stage 3 자리표시자**: 상품 상세의 "장바구니 담기" 버튼은 `disabled` + TODO 주석만 존재하며 API 호출 없음.
+  계약 위반 아님.
+
+### 4. 게이트 판정
+
+- **상품 모듈 게이트: 통과(PASS)**
+- 사유: (a) 발견된 불일치 2건 모두 해결, 미해결 0건. (b) 백엔드 `cleanTest test` 16/16 통과(회귀 없음),
+  프론트 `tsc -b` + `vite build` 통과. (c) 실제 응답 JSON을 확보해 필드명·null 처리·날짜 직렬화까지
+  값 단위로 대조 완료. 완료 판정 기준 충족.
+
+---
+
+_다음 모듈(장바구니 → 주문/결제)은 구현 완료 후 본 리포트에 새 섹션으로 이어 검증한다._

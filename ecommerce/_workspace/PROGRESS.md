@@ -2,7 +2,7 @@
 
 > 내일 이어서 작업하기 위한 핸드오프 문서. 세션이 바뀌어도 이 문서 + `_workspace/contract/`만 보면 재개 가능하다.
 
-**최종 갱신:** 2026-07-20 (Stage 0 완료 시점)
+**최종 갱신:** 2026-07-24 (Stage 2 완료 시점)
 
 ---
 
@@ -14,8 +14,8 @@
 ```
 Stage 0: 계약(contract) 전체 설계          ✅ 완료
 Stage 1: 인증 (회원가입/로그인 + JWT) + 프로젝트 스캐폴딩   ✅ 완료 (QA PASS)
-Stage 2: 상품 (목록/상세)                  ⬜ 다음
-Stage 3: 장바구니 (서버 저장)              ⬜
+Stage 2: 상품 (목록/상세)                  ✅ 완료 (QA PASS)
+Stage 3: 장바구니 (서버 저장)              ⬜ 다음
 Stage 4: 주문/체크아웃 + 모의결제          ⬜
 ```
 
@@ -82,14 +82,38 @@ Stage 4: 주문/체크아웃 + 모의결제          ⬜
 - FE: `src/api/client.ts` import해서 `products.ts`/`cart.ts`/`orders.ts` 추가. `router.tsx`에 다음 도메인 라우트 TODO 자리표시. 보호 화면은 `<RequireAuth>`로 감싼다.
 - **환경 주의:** Spring Boot 4 + Jackson 3 (ObjectMapper=`tools.jackson.databind.ObjectMapper`, MockMvc 슬라이스=`org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc`, `write-dates-as-timestamps` 속성 제거됨).
 
-## 다음 단계(Stage 2: 상품) 재개 방법
+## Stage 2 산출물 요약 (완료, QA PASS)
+
+- **backend/** — `product/` 패키지(entity/repository/service/controller/dto/mapper) + `common/dto/PageResponse`.
+  `GET /api/products`(page/size/category, 기본 0/20) · `GET /api/products/{id}`. 둘 다 permitAll.
+  `ProductSeeder`(`@Profile("!test")`)가 dev에 상품 12개(electronics/fashion/home) 시드. `cleanTest test` **16/16 통과**.
+- **frontend/** — `api/products.ts`(`listProducts`/`getProduct`), `ProductListPage`(그리드·카테고리 필터·페이지네이션·품절 배지),
+  `ProductDetailPage`(404 분기, 장바구니 버튼은 Stage 3 자리표시자 disabled). `products`·`products/:id` 라우트는
+  **RequireAuth 미적용**(계약상 인증 불필요). `npm run build` 통과.
+- **경계면 검증:** `qa-report.md` "상품 모듈 검증 (2차)" — 불일치 2건 발견→해결, 최종 미해결 0건, PASS.
+
+**Stage 2에서 고친 공통 인프라 (Stage 3/4가 그대로 수혜):**
+- `GlobalExceptionHandler`에 `MethodArgumentTypeMismatchException` · `MissingServletRequestParameterException`
+  핸들러 추가 → 잘못된 타입의 `@RequestParam`/`@PathVariable`이 **500이 아니라 400 VALIDATION_ERROR**로 응답.
+  (수정 전에는 `/api/products/abc`가 500이었고, 이 결함은 `/api/cart/items/{id}`·`/api/orders/{id}`에도 전파될 것이었음.)
+- `common/dto/PageResponse<T>` 생성. 이후 목록 페이지네이션이 필요하면 `PageResponse.from(Page)`를 재사용한다.
+  **Spring Data `Page<T>`를 직접 직렬화하면 계약 위반**(`content/pageable/...`)이므로 반드시 이 DTO를 거칠 것.
+
+**검증 시 반드시 지킬 것:** `./gradlew test`만 실행하면 `UP-TO-DATE`로 **테스트를 건너뛴다**.
+반드시 `./gradlew cleanTest test`로 강제 재실행해야 실제 통과를 확인할 수 있다.
+
+## 다음 단계(Stage 3: 장바구니) 재개 방법
 
 1. 이 문서 + `_workspace/contract/` + `qa-report.md`를 읽어 컨텍스트 복원.
-2. Stage 2 착수 시:
-   - `backend-engineer` → 상품 도메인(`Product` 엔티티, `GET /api/products`=PageResponse, `GET /api/products/{id}`). 시드 데이터 고려.
-   - `frontend-engineer` → 상품 목록/상세 화면, `api/products.ts`. 목록은 `PageResponse<Product>` 형태 주의.
+2. Stage 3 착수 시:
+   - `backend-engineer` → `Cart`/`CartItem` 엔티티, 4개 엔드포인트(GET/POST/PATCH/DELETE).
+     **주의:** 사용자당 카트 1개 **지연 생성**, 동일 productId **수량 합산**(`(cartId, productId)` 복합 유니크),
+     모든 응답이 `CartResponse` 전체 반환, 재고 초과 시 409 `OUT_OF_STOCK`, 타인 아이템 조작 시 403 `FORBIDDEN`.
+     userId는 `@AuthenticationPrincipal AuthPrincipal principal`로 취득.
+   - `frontend-engineer` → `api/cart.ts`, 장바구니 화면, `ProductDetailPage`의 disabled 버튼 활성화(TODO 주석 위치).
+     장바구니 라우트는 인증 필요이므로 `<RequireAuth>`로 감쌀 것.
    - 두 엔지니어는 계약을 먼저 읽고 shape을 정확히 일치시킨다. 계약 모순 발견 시 계약을 직접 고치지 말고 보고 → 오케스트레이터가 조율.
-3. 완료 즉시 `qa-integrator`로 상품 모듈 경계면 검증. 결과는 `qa-report.md`에 누적.
+3. 완료 즉시 경계면 검증(`integration-qa`). 결과는 `qa-report.md`에 누적.
 4. 통과하면 멈추고 다음 단계 지시 대기.
 
 ---
