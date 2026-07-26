@@ -171,4 +171,94 @@
 
 ---
 
-_다음 모듈(장바구니 → 주문/결제)은 구현 완료 후 본 리포트에 새 섹션으로 이어 검증한다._
+## 장바구니 모듈 검증 (3차) — 2026-07-26
+
+**대상:** Stage 3 산출물 (BE `cart/` 패키지 4개 엔드포인트, FE `api/cart.ts`·`CartPage`·`/cart` 라우트·상품상세 담기 버튼)
+**검증자:** 오케스트레이터 직접 수행(메인 스레드). 구현 에이전트의 자기보고를 신뢰하지 않고 **모든 수치를 직접 재현**했다.
+
+### 1. 계약 대조 (필드 단위)
+
+| 항목 | 계약(types.ts) | 백엔드 DTO | 프론트 사용 | 판정 |
+|------|---------------|-----------|------------|------|
+| `CartResponse.id` | `number` | `Long id` | `number` | 일치 |
+| `CartResponse.items` | `CartItemResponse[]` | `List<CartItemResponse>` | 동일 | 일치 |
+| `CartResponse.totalAmount` | `number`(정수 원) | `Integer` | `number` | 일치 |
+| `CartItemResponse.id` | CartItem id | `Long id` (CartItem id) | `item.id`를 PATCH/DELETE 경로에 사용 | 일치 |
+| `.productId` | `number` | `Long` | `number` | 일치 |
+| `.productName` | `string` | `String` | `string` | 일치 |
+| `.productImageUrl` | `string \| null` | `String`(null 허용) | null 분기 후 placeholder 렌더 | 일치 |
+| `.price` | `number`(정수) | `Integer` (Product.price가 `Integer`) | `number` | 일치 |
+| `.quantity` / `.subtotal` | `number` | `Integer` | `number` | 일치 |
+| `AddCartItemRequest` | `{productId, quantity}` | 동일 + `@NotNull @Min(1)` | 동일 | 일치 |
+| `UpdateCartItemRequest` | `{quantity}` | 동일 + `@NotNull @Min(1)` | 동일 | 일치 |
+
+**경로·메서드·상태코드:** `GET /api/cart`(200) · `POST /api/cart/items`(**201**) · `PATCH /api/cart/items/{id}`(200) ·
+`DELETE /api/cart/items/{id}`(200) — 컨트롤러(`CartController`)와 `api/cart.ts` 양쪽 모두 계약과 일치.
+POST만 `ResponseEntity.status(CREATED)`로 201을 명시한 점 확인.
+
+**금액 직렬화:** `Product.price`가 `Integer`이므로 BigDecimal 소수점 직렬화(`129000.00`) 위험 없음.
+`subtotal = price * quantity`, `totalAmount = sum(subtotal)` 모두 서버에서 int 연산. **프론트는 총액을 재계산하지 않고
+서버 `totalAmount`를 그대로 출력**하여 계산 주체가 1개로 유지됨(`CartPage.tsx`).
+
+### 2. 동작 규칙 대조 (계약 3절)
+
+| 규칙 | 구현 | 판정 |
+|------|------|------|
+| 사용자당 카트 1개, 지연 생성 | `getOrCreateCart` — `findByUserId` 실패 시 생성. `Cart.userId` unique | 일치 |
+| 빈 카트는 `items: []`, `totalAmount: 0` | `buildCartResponse`가 빈 리스트 → 합계 0 | 일치 |
+| 동일 productId 수량 합산 | `findByCartIdAndProductId` 존재 시 `mergeQuantity` | 일치 |
+| 합산 동시성 방어 | `(cart_id, product_id)` DB 복합 유니크 | 일치 |
+| 모든 응답이 `CartResponse` 전체 | 4개 메서드 모두 `buildCartResponse` 반환 | 일치 |
+| 재고 초과 → 409 `OUT_OF_STOCK` | `validateStock` → `OutOfStockException(ErrorCode.OUT_OF_STOCK)` | 일치 |
+| 타인 아이템 조작 → **403** `FORBIDDEN` | `findOwnedItem`이 미존재는 404, 소유자 불일치는 403으로 **분기** | 일치 |
+| quantity < 1 → 400 `VALIDATION_ERROR` | `@Min(1)` + 기존 `GlobalExceptionHandler` | 일치 |
+| **재고 차감 없음**(차감은 Stage 4 주문 시점) | `validateStock`은 검증만, `Product.stock` 변경 코드 없음 | 일치 |
+| 장바구니 라우트 인증 필요 | BE: `anyRequest().authenticated()` 기본 정책 / FE: `<RequireAuth>` | 일치 |
+
+**PATCH 의미론:** 계약의 "변경 후 수량"대로 **절대값 치환**(`item.changeQuantity(request.quantity())`)이며
+증분이 아니다. 프론트도 `item.quantity ± 1`을 계산해 절대값으로 보내므로 양쪽 해석이 같다.
+
+### 3. 실제 실행 검증 (직접 재현)
+
+- **백엔드** — `build/test-results/test/*.xml`을 직접 파싱:
+  `CartControllerTest` **tests=15 failures=0 errors=0**, `AuthControllerTest` 6/6, `ProductControllerTest` 10/10 →
+  **합계 31/31, 회귀 0건**. XML 타임스탬프가 당일 갱신본이라 `UP-TO-DATE` 스킵이 아닌 실제 실행임을 확인.
+  케이스에 지연생성·401·201 shape·수량합산·재고초과 409(추가/수정)·404·400(추가/수정)·403(PATCH/DELETE)·
+  삭제 후 응답에서 제거 확인이 모두 포함됨.
+- **프론트** — 직접 실행: `npx tsc --noEmit` exit=0(출력 없음), `npm run build` 성공(90 modules, dist 생성).
+
+### 4. 불일치
+
+**미해결 불일치 0건.** 이번 라운드는 발견된 계약 불일치 자체가 없었다(Stage 1·2에서 공통 인프라가
+정리된 효과로 판단).
+
+#### 참고(불일치 아님, 관찰 사항)
+
+- **`insertNewItem`의 경합 복구 로직은 의도대로 동작하지 않을 가능성이 높다** (`CartService.java`).
+  `saveAndFlush`가 `DataIntegrityViolationException`을 던지면 JPA는 해당 트랜잭션을 보통
+  rollback-only로 표시하므로, 같은 트랜잭션 안에서 기존 행에 병합하는 복구는 커밋 시점에
+  `UnexpectedRollbackException`으로 실패할 수 있다. **다만 1차 방어선인 DB 복합 유니크 제약은 정상 작동**하여
+  중복 행이 생기지 않는다(요청이 실패할 뿐 데이터는 오염되지 않음). 실제 동시 요청 경합은 MVP에서 매우 드물고
+  계약 위반도 아니므로 차단 사유로 보지 않는다. 근본 해결이 필요하면 DB 레벨 upsert 또는
+  신규 트랜잭션에서의 재시도로 전환할 것. **Stage 4 주문 생성(재고 차감)에서 유사 패턴을 쓸 경우 반드시 재검토.**
+- **삭제된 상품이 장바구니에 남아 있으면 `GET /api/cart`가 404로 실패한다** (`buildCartResponse`).
+  계약상 `GET /api/cart`의 에러는 401뿐이므로 형식상 어긋나지만, MVP에 상품 삭제 API가 없어 도달 불가 경로다.
+  상품 삭제/비활성화를 도입하면 해당 아이템을 건너뛰거나 별도 표기하는 정책이 필요하다.
+- **장바구니 화면의 수량 "+" 버튼은 재고 상한에서 막히지 않는다.** `CartItemResponse`에 `stock`이 없어
+  클라이언트가 상한을 알 수 없기 때문이며(계약대로), 서버가 409 `OUT_OF_STOCK`을 주면 아이템별 메시지로
+  안내한다. 계약 준수 결과이지 결함이 아니다.
+- **상품 상세의 수량 스테퍼**는 계약에 없는 UX 추가분이다. 상한을 `product.stock`으로 두되
+  **서버 검증을 대체하지 않고** 서버 409 경로가 그대로 살아 있음을 확인했다.
+- **비로그인 "담기"**: 버튼을 비활성화하지 않고 `/login`으로 이동시키며 `state.from`에 복귀 경로를 담는다.
+  기존 `LoginPage`의 리다이렉트 패턴과 일치.
+
+### 5. 게이트 판정
+
+- **장바구니 모듈 게이트: 통과(PASS)**
+- 사유: (a) 계약 불일치 0건, 미해결 0건. (b) 백엔드 31/31 통과(회귀 없음)·프론트 타입체크/빌드 통과를
+  **오케스트레이터가 직접 재현**하여 확인. (c) 필드 대조에 더해 동작 규칙(지연생성·합산·소유권 403·
+  재고 검증만 수행)까지 코드 레벨로 확인. 완료 판정 기준 충족.
+
+---
+
+_다음 모듈(주문/모의결제)은 구현 완료 후 본 리포트에 새 섹션으로 이어 검증한다._

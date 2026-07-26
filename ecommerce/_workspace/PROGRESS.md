@@ -2,7 +2,7 @@
 
 > 내일 이어서 작업하기 위한 핸드오프 문서. 세션이 바뀌어도 이 문서 + `_workspace/contract/`만 보면 재개 가능하다.
 
-**최종 갱신:** 2026-07-24 (Stage 2 완료 시점)
+**최종 갱신:** 2026-07-26 (Stage 3 완료 시점)
 
 ---
 
@@ -15,8 +15,8 @@
 Stage 0: 계약(contract) 전체 설계          ✅ 완료
 Stage 1: 인증 (회원가입/로그인 + JWT) + 프로젝트 스캐폴딩   ✅ 완료 (QA PASS)
 Stage 2: 상품 (목록/상세)                  ✅ 완료 (QA PASS)
-Stage 3: 장바구니 (서버 저장)              ⬜ 다음
-Stage 4: 주문/체크아웃 + 모의결제          ⬜
+Stage 3: 장바구니 (서버 저장)              ✅ 완료 (QA PASS)
+Stage 4: 주문/체크아웃 + 모의결제          ⬜ 다음 (마지막 단계)
 ```
 
 - **계약은 통짜로 Stage 0에서 확정**했고, **구현만 단계별**로 나눈다 (계약을 도메인별로 쪼개면 필드 충돌이 오히려 늘기 때문).
@@ -102,19 +102,51 @@ Stage 4: 주문/체크아웃 + 모의결제          ⬜
 **검증 시 반드시 지킬 것:** `./gradlew test`만 실행하면 `UP-TO-DATE`로 **테스트를 건너뛴다**.
 반드시 `./gradlew cleanTest test`로 강제 재실행해야 실제 통과를 확인할 수 있다.
 
-## 다음 단계(Stage 3: 장바구니) 재개 방법
+## Stage 3 산출물 요약 (완료, QA PASS)
+
+- **backend/** — `cart/` 패키지(entity/repository/service/controller/dto/mapper).
+  `GET /api/cart`(200, 지연 생성) · `POST /api/cart/items`(**201**) · `PATCH /api/cart/items/{id}`(200) ·
+  `DELETE /api/cart/items/{id}`(200). 4개 모두 인증 필요이며 **응답은 항상 `CartResponse` 전체**.
+  `Cart.userId` unique, `CartItem`에 `(cart_id, product_id)` **복합 유니크**. 재고는 **검증만** 하고 차감하지 않는다.
+  `cleanTest test` **31/31 통과**(cart 15 + auth 6 + product 10, 회귀 0).
+- **frontend/** — `api/cart.ts`(getCart/addCartItem/updateCartItem/removeCartItem), `CartPage`(목록·수량변경·삭제·
+  빈 카트·아이템별 에러), `/cart` 라우트(**RequireAuth 적용**), `Layout`에 장바구니 링크(인증 시 노출),
+  `ProductDetailPage`의 담기 버튼 활성화 + 수량 스테퍼. `tsc --noEmit`·`npm run build` 통과.
+- **경계면 검증:** `qa-report.md` "장바구니 모듈 검증 (3차)" — 불일치 **0건**, PASS.
+  구현 에이전트 자기보고를 신뢰하지 않고 오케스트레이터가 테스트 XML·빌드를 직접 재현했다.
+
+**Stage 3에서 추가된 재사용 자산 (Stage 4가 그대로 씀):**
+- `common/exception/ForbiddenException`(403 FORBIDDEN) — **주문 도메인 소유권 검증에 그대로 재사용**.
+- `common/exception/OutOfStockException`(409 OUT_OF_STOCK) — 주문 생성 시 재고 차감 검증에 재사용.
+- `CartService.getOrCreateCart(userId)` / `CartItemRepository.findByCartId(cartId)` —
+  체크아웃이 "현재 장바구니 전체"를 읽을 때 그대로 호출하면 된다.
+- FE: `CartPage`의 에러코드 분기 패턴(`err instanceof ApiError && err.code === ...`)을 체크아웃 화면에 재사용.
+
+**Stage 3에서 남긴 주의점 (Stage 4에 직접 영향):**
+- `CartService.insertNewItem`의 경합 복구(`DataIntegrityViolationException` catch 후 같은 트랜잭션에서 병합)는
+  JPA가 트랜잭션을 rollback-only로 표시하므로 **의도대로 동작하지 않을 가능성이 높다**.
+  DB 유니크 제약이라는 1차 방어선은 정상이라 데이터는 오염되지 않는다.
+  **Stage 4에서 재고 차감에 같은 패턴(예외 잡고 같은 트랜잭션에서 복구)을 쓰지 말 것** — 낙관적 락 또는
+  `UPDATE ... WHERE stock >= ?`의 갱신 행 수 확인 방식이 안전하다.
+- `buildCartResponse`는 아이템의 상품이 사라지면 404를 던진다. 상품 삭제 API가 없어 현재는 도달 불가.
+
+## 다음 단계(Stage 4: 주문/체크아웃 + 모의결제) 재개 방법
 
 1. 이 문서 + `_workspace/contract/` + `qa-report.md`를 읽어 컨텍스트 복원.
-2. Stage 3 착수 시:
-   - `backend-engineer` → `Cart`/`CartItem` 엔티티, 4개 엔드포인트(GET/POST/PATCH/DELETE).
-     **주의:** 사용자당 카트 1개 **지연 생성**, 동일 productId **수량 합산**(`(cartId, productId)` 복합 유니크),
-     모든 응답이 `CartResponse` 전체 반환, 재고 초과 시 409 `OUT_OF_STOCK`, 타인 아이템 조작 시 403 `FORBIDDEN`.
-     userId는 `@AuthenticationPrincipal AuthPrincipal principal`로 취득.
-   - `frontend-engineer` → `api/cart.ts`, 장바구니 화면, `ProductDetailPage`의 disabled 버튼 활성화(TODO 주석 위치).
-     장바구니 라우트는 인증 필요이므로 `<RequireAuth>`로 감쌀 것.
+2. Stage 4 착수 시(계약 `api-spec.md` 4·5절):
+   - `backend-engineer` → `Order`/`OrderItem`/`Payment` 엔티티, `POST /api/orders`(체크아웃) ·
+     `GET /api/orders` (배열) · `GET /api/orders/{id}` · 결제 1개 엔드포인트.
+     **주의:** 재고 차감은 **주문 생성 시점**에 한다(장바구니에서 이미 하지 않았음).
+     `OrderItem.priceAtOrder`에 **가격 스냅샷** 보존. 빈 장바구니 체크아웃은 409 `CART_EMPTY`,
+     재고 부족은 409 `OUT_OF_STOCK`. 타인 주문 조회는 403 `FORBIDDEN`.
+     **모의결제 실패는 HTTP 200 + 본문 `status=FAILED`** (에러 응답 아님). 이미 결제된 주문 재결제만 409 `ALREADY_PAID`.
+     주문 목록은 배열, 장바구니와 달리 `PageResponse`가 아니다.
+   - `frontend-engineer` → `api/orders.ts`, 체크아웃 화면, 주문 목록/상세, 결제 결과 화면.
+     `router.tsx`의 `TODO(다음 단계): checkout, orders, orders/:id/complete` 자리에 라우트 추가, 전부 `<RequireAuth>`.
+     **결제 실패는 예외가 아니라 200 응답의 `status` 필드로 분기**해야 한다(가장 틀리기 쉬운 지점).
    - 두 엔지니어는 계약을 먼저 읽고 shape을 정확히 일치시킨다. 계약 모순 발견 시 계약을 직접 고치지 말고 보고 → 오케스트레이터가 조율.
-3. 완료 즉시 경계면 검증(`integration-qa`). 결과는 `qa-report.md`에 누적.
-4. 통과하면 멈추고 다음 단계 지시 대기.
+3. 완료 즉시 경계면 검증. 결과는 `qa-report.md`에 누적.
+4. 통과하면 멈추고 다음 지시 대기(Stage 4가 MVP 마지막 단계).
 
 ---
 

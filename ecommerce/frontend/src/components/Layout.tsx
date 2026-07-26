@@ -25,6 +25,9 @@ export function Layout() {
           </Link>
           {isAuthenticated ? (
             <>
+              <Link to="/cart" className="btn btn-ghost">
+                장바구니
+              </Link>
               <span className="nav-user">{user?.name}님</span>
               <button type="button" className="btn btn-ghost" onClick={handleLogout}>
                 로그아웃
