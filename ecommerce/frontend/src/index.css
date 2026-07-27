@@ -221,6 +221,27 @@ a:hover {
   color: var(--danger);
   border: 1px solid #fecaca;
 }
+/* 주문/결제 상태 배지 */
+.badge-pending {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+.badge-success {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+.badge-failed {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fecaca;
+}
+.badge-neutral {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
 
 /* ----- 상품 목록 ----- */
 .product-list {
@@ -566,5 +587,208 @@ a:hover {
   .cart-item-remove {
     grid-area: remove;
     justify-self: end;
+  }
+}
+
+.cart-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+/* ----- 주문 요약 목록 (체크아웃 / 주문 상세 공용) ----- */
+.summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.summary-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.85rem 1rem;
+}
+.summary-item-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.summary-item-detail {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.summary-item-subtotal {
+  font-weight: 700;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+/* ----- 체크아웃 ----- */
+.checkout-page {
+  width: 100%;
+  max-width: 780px;
+}
+.checkout-page h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.5rem;
+}
+.checkout-notice {
+  margin: 0 0 1.5rem;
+  font-size: 0.9rem;
+}
+.checkout-error {
+  margin-top: 1.25rem;
+  margin-bottom: 0;
+}
+.checkout-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* ----- 주문 목록 ----- */
+.order-list-page {
+  width: 100%;
+  max-width: 780px;
+}
+.order-list-page h1 {
+  font-size: 1.6rem;
+  margin: 0 0 1.5rem;
+}
+.order-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.order-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.15rem;
+  color: var(--text);
+}
+.order-card:hover {
+  border-color: var(--primary);
+  text-decoration: none;
+}
+.order-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.order-card-id {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.order-card-summary {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-card-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+.order-card-amount {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--primary);
+}
+
+/* ----- 주문 상세 + 결제 ----- */
+.order-detail-page {
+  width: 100%;
+  max-width: 780px;
+}
+.order-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.order-detail-head h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+.order-section {
+  margin-top: 2rem;
+}
+.order-section-title {
+  font-size: 1.1rem;
+  margin: 0 0 0.85rem;
+}
+
+.payment-info {
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.15rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.payment-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.payment-info-row dt {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.payment-info-row dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.payment-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.payment-simulate-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.payment-simulate-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .summary-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .summary-item-detail {
+    grid-column: 1 / -1;
   }
 }

@@ -2,7 +2,7 @@
 
 > 내일 이어서 작업하기 위한 핸드오프 문서. 세션이 바뀌어도 이 문서 + `_workspace/contract/`만 보면 재개 가능하다.
 
-**최종 갱신:** 2026-07-26 (Stage 3 완료 시점)
+**최종 갱신:** 2026-07-27 (Stage 4 완료 — **MVP 전 단계 완료**)
 
 ---
 
@@ -16,8 +16,10 @@ Stage 0: 계약(contract) 전체 설계          ✅ 완료
 Stage 1: 인증 (회원가입/로그인 + JWT) + 프로젝트 스캐폴딩   ✅ 완료 (QA PASS)
 Stage 2: 상품 (목록/상세)                  ✅ 완료 (QA PASS)
 Stage 3: 장바구니 (서버 저장)              ✅ 완료 (QA PASS)
-Stage 4: 주문/체크아웃 + 모의결제          ⬜ 다음 (마지막 단계)
+Stage 4: 주문/체크아웃 + 모의결제          ✅ 완료 (QA PASS) — 마지막 단계
 ```
+
+> **MVP 완료.** 계약의 12개 엔드포인트(인증 2 · 상품 2 · 장바구니 4 · 주문 3 · 결제 1)가 전부 구현·검증되었다.
 
 - **계약은 통짜로 Stage 0에서 확정**했고, **구현만 단계별**로 나눈다 (계약을 도메인별로 쪼개면 필드 충돌이 오히려 늘기 때문).
 - 프로젝트 스캐폴딩(Spring Boot / Vite 뼈대 생성)은 Stage 1 착수 시 해당 엔지니어가 자기 디렉터리를 잡으며 수행한다.
@@ -130,23 +132,49 @@ Stage 4: 주문/체크아웃 + 모의결제          ⬜ 다음 (마지막 단�
   `UPDATE ... WHERE stock >= ?`의 갱신 행 수 확인 방식이 안전하다.
 - `buildCartResponse`는 아이템의 상품이 사라지면 404를 던진다. 상품 삭제 API가 없어 현재는 도달 불가.
 
-## 다음 단계(Stage 4: 주문/체크아웃 + 모의결제) 재개 방법
+## Stage 4 산출물 요약 (완료, QA PASS)
 
-1. 이 문서 + `_workspace/contract/` + `qa-report.md`를 읽어 컨텍스트 복원.
-2. Stage 4 착수 시(계약 `api-spec.md` 4·5절):
-   - `backend-engineer` → `Order`/`OrderItem`/`Payment` 엔티티, `POST /api/orders`(체크아웃) ·
-     `GET /api/orders` (배열) · `GET /api/orders/{id}` · 결제 1개 엔드포인트.
-     **주의:** 재고 차감은 **주문 생성 시점**에 한다(장바구니에서 이미 하지 않았음).
-     `OrderItem.priceAtOrder`에 **가격 스냅샷** 보존. 빈 장바구니 체크아웃은 409 `CART_EMPTY`,
-     재고 부족은 409 `OUT_OF_STOCK`. 타인 주문 조회는 403 `FORBIDDEN`.
-     **모의결제 실패는 HTTP 200 + 본문 `status=FAILED`** (에러 응답 아님). 이미 결제된 주문 재결제만 409 `ALREADY_PAID`.
-     주문 목록은 배열, 장바구니와 달리 `PageResponse`가 아니다.
-   - `frontend-engineer` → `api/orders.ts`, 체크아웃 화면, 주문 목록/상세, 결제 결과 화면.
-     `router.tsx`의 `TODO(다음 단계): checkout, orders, orders/:id/complete` 자리에 라우트 추가, 전부 `<RequireAuth>`.
-     **결제 실패는 예외가 아니라 200 응답의 `status` 필드로 분기**해야 한다(가장 틀리기 쉬운 지점).
-   - 두 엔지니어는 계약을 먼저 읽고 shape을 정확히 일치시킨다. 계약 모순 발견 시 계약을 직접 고치지 말고 보고 → 오케스트레이터가 조율.
-3. 완료 즉시 경계면 검증. 결과는 `qa-report.md`에 누적.
-4. 통과하면 멈추고 다음 지시 대기(Stage 4가 MVP 마지막 단계).
+- **backend/** — `order/` 패키지(entity/repository/service/controller/dto/mapper) + `payment/` 패키지 +
+  공통 예외 3개(`OrderNotFoundException` 404 · `CartEmptyException` 409 · `AlreadyPaidException` 409, **새 ErrorCode 추가 없음**).
+  `POST /api/orders`(**201**, 본문 `{}` 또는 생략) · `GET /api/orders`(**배열**, 최신순) ·
+  `GET /api/orders/{id}`(200) · `POST /api/orders/{id}/payment`(**200**). 4개 모두 인증 필요.
+  `cleanTest test` **50/50 통과**(order 19 신규 + auth 6 + product 10 + cart 15, 회귀 0).
+- **frontend/** — `api/orders.ts`(createOrder/listOrders/getOrder/payOrder), `CheckoutPage`(장바구니 요약·총액·
+  CART_EMPTY/OUT_OF_STOCK 분기), `OrderHistoryPage`(배열 응답·최신순·상태 배지), `OrderCompletePage`(주문 상세 +
+  모의결제 실행·결과), `OrderStatusBadge`, `utils/format.ts`. `checkout`·`orders`·`orders/:id/complete` 라우트
+  **전부 `<RequireAuth>`**. `Layout`에 주문 내역 링크, `CartPage`에 체크아웃 진입점. `tsc --noEmit`·`npm run build` 통과.
+- **경계면 검증:** `qa-report.md` "주문/결제 모듈 검증 (4차)" — 불일치 **0건**, PASS.
+  오케스트레이터가 테스트 XML·양쪽 빌드·핵심 코드 경로를 직접 재현 확인했다.
+
+**Stage 4의 핵심 구현 결정 (이후 확장 시 반드시 인지할 것):**
+- **재고 차감 동시성** — `ProductRepository.decreaseStockIfAvailable`의 조건부 UPDATE
+  (`UPDATE Product SET stock = stock - :qty WHERE id = :id AND stock >= :qty`) 후 **갱신 행 수가 0이면 OUT_OF_STOCK**.
+  Stage 3이 경고한 "예외 catch 후 같은 트랜잭션에서 복구" 패턴을 쓰지 않았다.
+  `clearAutomatically`는 **의도적으로 미사용** — 같은 트랜잭션에서 Cart/CartItem을 삭제해야 하는데
+  컨텍스트를 비우면 준영속이 되어 깨진다.
+- **결제 실패 시 재고를 복원하지 않는다.** 계약상 FAILED 주문은 재결제가 가능하므로, 실패 시 되돌리면
+  재결제 성공 시 재고 차감 없이 판매가 확정된다. 주문 취소 API가 생기면 **그 시점에** 복원해야 한다.
+- **재결제 정책** — `409 ALREADY_PAID`는 **SUCCESS 주문에만**. FAILED 주문은 BE·FE 모두 재시도를 허용하며,
+  Payment는 주문당 1건(orderId 유니크)이라 재시도 시 같은 행을 갱신한다(`payment.id` 동일).
+- **`simulateSuccess` 기본값 계약** — BE가 래퍼 `Boolean`으로 받고 `null → true`. FE가 인자를 생략하면
+  JSON 직렬화가 키를 제거해 `{}`가 전송되므로, **primitive `boolean`으로 바꾸면 "생략 = 결제 실패"로 동작이 뒤집힌다.**
+  회귀 방지 테스트 2개(`pay_withEmptyJsonObject_defaultsToSuccess`, `pay_withNoBodyAtAll_defaultsToSuccess`)로 고정해 두었다.
+
+---
+
+## 알려진 계약 이슈 (미해결, 차단 사유 아님)
+
+- **계약 내부 모순 — OrderItem의 상품명 스냅샷 부재.**
+  `data-model.md` §6의 OrderItem 필드는 `orderId/productId/quantity/priceAtOrder`뿐인데
+  `types.ts`의 `OrderItemResponse`는 `productName`을 요구한다. 구현은 data-model을 따라 이름을 저장하지 않고
+  응답 조립 시 Product를 조인해 채웠다. 결과적으로 **가격은 스냅샷이지만 상품명은 스냅샷이 아니다.**
+  또한 상품이 삭제되면 과거 주문 조회가 404가 된다(`OrderService.requireProduct`).
+  상품 삭제/수정 API가 없어 MVP에서는 도달 불가. **상품 삭제 기능을 추가하려면 `OrderItem.productName` 컬럼을
+  먼저 도입하고 계약 두 파일을 정렬해야 한다.**
+- `PaymentService`에 `CANCELLED` 주문 결제 가드가 없다(FE만 막음). 취소 API 부재로 `CANCELLED` 생성 경로가
+  없어 도달 불가. **취소 API 도입 시 BE 가드 추가 필수.**
+- Stage 3의 `CartService.insertNewItem` 경합 복구 패턴은 여전히 의도대로 동작하지 않을 가능성이 높다
+  (DB 유니크 제약이 1차 방어선이라 데이터는 오염되지 않음). 정리하려면 별도 작업이 필요하다.
 
 ---
 
@@ -154,3 +182,5 @@ Stage 4: 주문/체크아웃 + 모의결제          ⬜ 다음 (마지막 단�
 
 - 커밋은 로컬 `main` 기준으로 진행 중. 원격 푸시 여부는 사용자 결정.
 - 저장소 루트 `.claude/settings.json`은 하네스와 별개 파일. 커밋 대상 여부 미정.
+- **실제 구동 검증 미수행** — dev 프로파일이 로컬 PostgreSQL을 요구해 BE·FE를 실제로 띄운 end-to-end
+  확인은 하지 않았다. 검증은 통합 테스트(MockMvc가 실제 직렬화 JSON을 파싱)와 빌드까지다.

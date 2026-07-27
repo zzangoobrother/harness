@@ -98,6 +98,10 @@ export function CartPage() {
         <Link to="/products" className="btn btn-primary">
           상품 보러 가기
         </Link>
+        {/* 빈 장바구니에서는 주문할 수 없다(서버도 409 CART_EMPTY로 거부). 비활성 버튼으로 표시한다. */}
+        <button type="button" className="btn btn-ghost" disabled>
+          주문하기
+        </button>
       </div>
     );
   }
@@ -171,6 +175,13 @@ export function CartPage() {
       <div className="cart-summary">
         <span className="cart-summary-label">총 결제금액</span>
         <span className="cart-summary-amount">{formatPrice(cart.totalAmount)}</span>
+      </div>
+
+      {/* 체크아웃 진입점. 여기까지 왔다면 아이템이 1개 이상이다(빈 장바구니는 위에서 분기). */}
+      <div className="cart-actions">
+        <Link to="/checkout" className="btn btn-primary">
+          주문하기
+        </Link>
       </div>
     </div>
   );
