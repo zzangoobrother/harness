@@ -1,2 +1,5 @@
 .idea/
 my-first-harness/_workspace/
+
+# 브라우저 검증 도구가 남기는 스냅샷/스크린샷
+.playwright-mcp/
